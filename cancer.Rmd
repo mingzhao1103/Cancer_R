@@ -1,0 +1,205 @@
+---
+title: "Analysis on Breast Cancer"
+author: "Ming Zhao"
+date: "2/22/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE) 
+```
+
+
+## Importing and Cleaning Data
+
+```{r}
+
+setwd("/Users/mingzhao/Desktop")
+
+data <- read.csv("data.csv")
+
+dim(data)
+
+sapply(data, class)
+
+library(dplyr)
+glimpse(data)
+
+# create a matrix with all features
+X <- as.matrix(data[, c(3:32)])
+row.names(X) <- data$id
+
+# create a vector with M as 1
+# 1 represents malignant and 0 represents benign
+y <- as.numeric(data$diagnosis == "M")
+
+
+round(sapply(as.data.frame(X), mean, na.rm=TRUE), 3)
+round(sapply(as.data.frame(X), sd, na.rm=TRUE), 3)
+
+table(y)
+
+library(corrplot)
+M <-cor(X)
+corrplot(M, diag = FALSE, tl.cex = 0.7)
+
+```
+
+## PCA
+
+```{r}
+
+# PCA using covariance matrix
+
+pcov <- princomp(X, cor = FALSE, scores =  TRUE)
+summary(pcov)
+
+par(cex = 0.7)
+biplot(pcov)
+
+# Eigen values = variability of each component
+cvar <- pcov$sdev^2
+round(cvar, 3)
+
+# Percent of variance explained by each component
+pvecov <- cvar/sum(cvar)
+round(pvecov, 3)
+
+# alternative method to calculate eigen values
+u = eigen(cov(X))
+round(u$values, 3)
+
+plot(pvecov, type = "b", ylim = c(0, 1),
+     xlab = "Principal Component", 
+     ylab = "Proportion of Variance Explained")
+
+plot(cumsum(pvecov), type = "b", ylim = c(0, 1),
+     xlab = "Principal Component", 
+     ylab = "Cumulative Proportion of Variance Explained")
+
+# The scree-plots suggest that using a covariance matrix is not the correct approach for calculating the  principal compoents. So, we will then try the correlation matrix.
+
+```
+
+```{r}
+
+# PCA using correlation matrix
+
+pr <- prcomp(X, scale = TRUE, center =  TRUE)
+summary(pr)
+
+par(cex = 0.7)
+biplot(pr)
+
+# Eigen values = variability of each component
+pvar <- pr$sdev^2
+names(pvar) <- names(cvar)
+
+round(pvar, 3)
+
+# Percent of variance explained by each component
+pvecor <- pvar/sum(pvar)
+names(pvecor) <- names(pvecov)
+
+round(pvecor, 3)
+
+round(cumsum(pvecor), 2)
+
+plot(pvecor, type = "b", ylim = c(0, 1),
+     xlab = "Principal Component", 
+     ylab = "Proportion of Variance Explained")
+
+plot(cumsum(pvecor), type = "b", ylim = c(0, 1),
+     xlab = "Principal Component", 
+     ylab = "Cumulative Proportion of Variance Explained")
+
+# 89% of the variaton is explained by the first six PC's. Moreover, the eigen values associated with the first 6 PC's are greater than 1. We will use this criteria to decide on how many PC's to include in the model building process.
+
+```
+
+
+```{r}
+
+# Scatter plot by CP1 and CP2
+plot(pr$x[, c(1, 2)], col = (y+1), xlab = "PC1", ylab = "PC2")
+legend(x="bottomleft", pch = 1, col = c("red", "black"), legend = c("B", "M"))
+
+# Scatter plot by CP1 and CP3
+plot(pr$x[, c(1, 3)], col = (y+1), xlab = "PC1", ylab = "PC3")
+legend(x="bottomleft", pch = 1, col = c("red", "black"), legend = c("B", "M"))
+
+# Scatter plot by CP1 and CP6
+plot(pr$x[, c(1, 6)], col = (y+1), xlab = "PC1", ylab = "PC6")
+legend(x="bottomleft", pch = 1, col = c("red", "black"), legend = c("B", "M"))
+
+# There is a clear seperation of diagnosis (M or B) that is evident in PC1 vs. PC2 plot.
+# By using PCA, we reduced the dimension to 6 from 30; or in other words, we condensed the model down to six linear combinations of the various predictors.
+
+```
+
+## LDA
+
+```{r}
+
+ls(pr)
+
+pcs <- pr$x[, 1:6]
+
+ypcs <- cbind(y, pcs)
+
+head(ypcs, 10)
+
+```
+
+```{r}
+
+# Training/test split
+
+set.seed(2022)
+
+n <- nrow(ypcs)
+ids = sample(1:n, size=n*0.75, replace=FALSE)
+
+train = as.data.frame(ypcs[ids,])
+test = as.data.frame(ypcs[-ids,])
+
+nrow(train)
+nrow(test)
+
+```
+
+```{r}
+
+library(MASS)
+
+lda <- lda(y ~ .,data=train)
+lda
+
+lda_predict <- predict(object=lda, newdata=test)
+ls(lda_predict)
+
+class_predict <- lda_predict$class
+class_predict
+
+```
+
+Model Evaluation Using ROC and AUC
+
+```{r}
+
+# Model Evaluation
+condusion_matrix <- table(class_predict, test$y)
+condusion_matrix 
+
+library(ROCR)
+pred <- prediction(as.data.frame(lda_predict$posterior)[,2], test$y)
+
+roc_performance <- performance(pred, measure = "tpr", x.measure = "fpr")
+auc_train <- performance(pred, measure = "auc")
+auc_train <- auc_train@y.values[[1]]
+
+plot(roc_performance)
+abline(a=0, b=1, col = "red")
+text(x = 0.4, y = 0.6, paste("AUC = ", round(auc_train, 3), sep = ""))
+
+```
