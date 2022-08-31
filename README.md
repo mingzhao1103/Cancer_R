@@ -1,6 +1,6 @@
 ## Analysis on Breast Cancer
 
-#### Project Goal 
+#### Project Statement 
 
 - Application of Principal Component Analysis (PCA) and Linear Discriminant Analysis (LDA) on the breast cancer case 
 
